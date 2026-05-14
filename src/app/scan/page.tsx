@@ -5,6 +5,10 @@ import { supabase } from '@/lib/supabase'
 import jsQR from 'jsqr'
 import type { ImageMarker } from '@/types'
 
+interface PlacedModel extends ImageMarker {
+  instanceId: string
+}
+
 export default function ScanPage() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -12,6 +16,7 @@ export default function ScanPage() {
   const [status, setStatus] = useState('')
   const [permissionAsked, setPermissionAsked] = useState(false)
   const [permissionDenied, setPermissionDenied] = useState(false)
+  const [placedModels, setPlacedModels] = useState<PlacedModel[]>([])
   const [lastScannedId, setLastScannedId] = useState('')
   const animationRef = useRef<number>(0)
 
@@ -28,28 +33,23 @@ export default function ScanPage() {
 
   async function requestCamera() {
     setPermissionAsked(true)
-    setStatus('Requesting camera access...')
+    setStatus('Requesting camera...')
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { 
-          facingMode: 'environment',
-          width: { ideal: 1280 }, 
-          height: { ideal: 720 } 
-        }
+        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
       })
       
       if (videoRef.current) {
         videoRef.current.srcObject = stream
         await videoRef.current.play()
         setCamera(stream)
-        setStatus('Point camera at QR code')
+        setStatus('Point at QR to add models')
         scanQRCode()
       }
     } catch (e: any) {
-      console.error('Camera error:', e)
       setPermissionDenied(true)
-      setStatus('Camera access denied. Please allow camera in your browser settings.')
+      setStatus('Camera access denied')
     }
   }
 
@@ -79,15 +79,15 @@ export default function ScanPage() {
       const markerId = code.data.split('/view/')[1]?.split(/[?&]/)[0]
       if (markerId && markerId !== lastScannedId) {
         setLastScannedId(markerId)
-        launchAR(markerId)
-        setTimeout(() => setLastScannedId(''), 3000)
+        addModel(markerId)
+        setTimeout(() => setLastScannedId(''), 2000)
       }
     }
 
     animationRef.current = requestAnimationFrame(scanQRCode)
   }
 
-  async function launchAR(markerId: string) {
+  async function addModel(markerId: string) {
     setStatus('Loading model...')
     
     const { data } = await supabase
@@ -101,117 +101,124 @@ export default function ScanPage() {
       return
     }
 
-    setStatus(`Found: ${data.name}`)
-
-    const isAndroid = /Android/.test(navigator.userAgent)
-
-    if (isAndroid) {
-      const intent = `intent://arvr.google.com/scene-viewer/1.0?file=${encodeURIComponent(data.glb_url)}&mode=ar_only#Intent;scheme=https;package=com.google.ar.core;action=android.intent.action.VIEW;S.browser_fallback_url=${encodeURIComponent(window.location.href)};end`
-      window.location.href = intent
-    } else {
-      window.location.href = `/view/${markerId}`
+    const newModel: PlacedModel = {
+      ...data,
+      instanceId: `${data.id}-${Date.now()}`
     }
+    
+    setPlacedModels(prev => [...prev, newModel])
+    setStatus(`Added: ${data.name}`)
+    setTimeout(() => setStatus('Point at QR to add more'), 1500)
+  }
+
+  function removeModel(instanceId: string) {
+    setPlacedModels(prev => prev.filter(m => m.instanceId !== instanceId))
+  }
+
+  function clearAll() {
+    setPlacedModels([])
+    setStatus('All models cleared')
   }
 
   return (
-    <div className="fixed inset-0 bg-black text-white flex flex-col">
-      {/* Header */}
-      <div className="p-4 flex items-center justify-between" style={{ background: 'rgba(0,0,0,0.7)' }}>
-        <a href="/" style={{ color: 'white', textDecoration: 'none' }}>← Back</a>
-        <span>📷 QR Scanner</span>
-        <span style={{ width: 50 }}></span>
-      </div>
-
-      {/* Camera or Permission Request */}
+    <div className="fixed inset-0 bg-black text-white">
       {!permissionAsked ? (
-        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
+        <div className="h-full flex flex-col items-center justify-center p-8 text-center">
           <div style={{ fontSize: 80, marginBottom: 30 }}>📷</div>
-          <h2 className="text-2xl font-bold mb-4">Scan QR Codes for AR</h2>
+          <h2 className="text-2xl font-bold mb-4">AR Multi-Model Scanner</h2>
           <p className="text-gray-400 mb-8">
-            Point your camera at a QR code to instantly view 3D models in AR
+            Scan QR codes to place multiple 3D models together
           </p>
-          <button
-            onClick={requestCamera}
-            style={{
-              background: '#4da6ff',
-              color: 'white',
-              padding: '18px 50px',
-              borderRadius: 30,
-              fontSize: 18,
-              fontWeight: 'bold',
-              border: 'none',
-              cursor: 'pointer'
-            }}
-          >
+          <button onClick={requestCamera} style={{
+            background: '#4da6ff', color: 'white',
+            padding: '18px 50px', borderRadius: 30,
+            fontSize: 18, fontWeight: 'bold', border: 'none'
+          }}>
             📷 Enable Camera
           </button>
         </div>
       ) : permissionDenied ? (
-        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
+        <div className="h-full flex flex-col items-center justify-center p-8 text-center">
           <div style={{ fontSize: 60, marginBottom: 20 }}>🚫</div>
-          <h2 className="text-xl font-bold mb-4">Camera Access Denied</h2>
-          <p className="text-gray-400 mb-6">
-            Please enable camera access in your browser settings and reload this page.
-          </p>
-          <button
-            onClick={() => window.location.reload()}
-            style={{
-              background: '#4da6ff',
-              color: 'white',
-              padding: '14px 30px',
-              borderRadius: 20,
-              fontSize: 16,
-              fontWeight: 'bold',
-              border: 'none'
-            }}
-          >
-            Reload Page
+          <h2 className="text-xl font-bold mb-4">Camera Denied</h2>
+          <button onClick={() => window.location.reload()} style={{
+            background: '#4da6ff', color: 'white',
+            padding: '14px 30px', borderRadius: 20, border: 'none'
+          }}>
+            Reload
           </button>
         </div>
       ) : (
         <>
-          <video
-            ref={videoRef}
-            playsInline
-            muted
-            autoPlay
-            style={{ flex: 1, objectFit: 'cover' }}
-          />
-          <canvas ref={canvasRef} style={{ display: 'none' }} />
-          
-          {/* Status overlay */}
-          <div
-            style={{
-              position: 'absolute',
-              top: 80,
-              left: '50%',
-              transform: 'translateX(-50%)',
-              background: 'rgba(0,0,0,0.7)',
-              padding: '10px 24px',
-              borderRadius: 20,
-              fontSize: 14
-            }}
-          >
+          {/* Camera feed */}
+          <video ref={videoRef} playsInline muted autoPlay className="absolute inset-0 w-full h-full object-cover" />
+          <canvas ref={canvasRef} className="hidden" />
+
+          {/* Header */}
+          <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-center" style={{ background: 'rgba(0,0,0,0.6)' }}>
+            <a href="/" className="text-white">← Back</a>
+            <span className="text-sm">{placedModels.length} models</span>
+            {placedModels.length > 0 && (
+              <button onClick={clearAll} className="text-red-400 text-sm">Clear All</button>
+            )}
+          </div>
+
+          {/* Status */}
+          <div className="absolute top-20 left-1/2 -translate-x-1/2 px-4 py-2 rounded-full text-sm" style={{ background: 'rgba(0,0,0,0.6)' }}>
             {status}
           </div>
 
-          {/* Bottom tip */}
-          <div
-            style={{
-              position: 'absolute',
-              bottom: 30,
-              left: '50%',
-              transform: 'translateX(-50%)',
-              background: 'rgba(0,0,0,0.7)',
-              padding: '12px 24px',
-              borderRadius: 20,
-              textAlign: 'center'
-            }}
-          >
-            Point at QR → AR launches
+          {/* Models overlay */}
+          <div className="absolute bottom-0 left-0 right-0 p-4" style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.8), transparent)' }}>
+            {placedModels.length > 0 ? (
+              <div className="space-y-2">
+                <p className="text-xs text-gray-400 mb-2">Models placed:</p>
+                <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
+                  {placedModels.map(model => (
+                    <div key={model.instanceId} className="flex items-center gap-2 px-3 py-1 rounded-full text-sm" style={{ background: 'rgba(255,255,255,0.1)' }}>
+                      <span>{model.name}</span>
+                      <button onClick={() => removeModel(model.instanceId)} className="text-red-400 ml-1">×</button>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-gray-400 mt-2">Scan more QR codes to add models</p>
+              </div>
+            ) : (
+              <div className="text-center py-4">
+                <p>Point camera at QR code</p>
+                <p className="text-xs text-gray-400 mt-1">Models will appear here</p>
+              </div>
+            )}
+          </div>
+
+          {/* Model viewers for each placed model */}
+          <div className="absolute inset-0 pointer-events-none">
+            {placedModels.map((model, index) => (
+              <div 
+                key={model.instanceId} 
+                className="absolute"
+                style={{
+                  left: `${10 + (index % 3) * 30}%`,
+                  top: `${30 + Math.floor(index / 3) * 20}%`,
+                  width: '35%',
+                  height: '150px',
+                  pointerEvents: 'auto'
+                }}
+              >
+                <model-viewer
+                  src={model.glb_url}
+                  alt={model.name}
+                  camera-controls
+                  auto-rotqate
+                  style={{ width: '100%', height: '100%', backgroundColor: 'transparent' }}
+                />
+              </div>
+            ))}
           </div>
         </>
       )}
+
+      <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.5.0/model-viewer.min.js" />
     </div>
   )
 }
