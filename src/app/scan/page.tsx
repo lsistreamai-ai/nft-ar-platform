@@ -12,47 +12,40 @@ export default function ScanPage() {
   const [status, setStatus] = useState('')
   const [permissionAsked, setPermissionAsked] = useState(false)
   const [permissionDenied, setPermissionDenied] = useState(false)
-  const [loadedMarkerIds, setLoadedMarkerIds] = useState<string[]>([])
+  const [models, setModels] = useState<ImageMarker[]>([])
+  const [loadedIds, setLoadedIds] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
   const animationRef = useRef<number>(0)
   const lastDetectedRef = useRef<string>('')
 
   useEffect(() => {
-    return () => stopCamera()
-  }, [])
-
-  function stopCamera() {
-    if (camera) {
-      camera.getTracks().forEach(t => t.stop())
+    return () => {
+      if (camera) camera.getTracks().forEach(t => t.stop())
+      cancelAnimationFrame(animationRef.current)
     }
-    cancelAnimationFrame(animationRef.current)
-  }
+  }, [camera])
 
   async function requestCamera() {
     setPermissionAsked(true)
-    setStatus('Requesting camera...')
-
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
       })
-      
       if (videoRef.current) {
         videoRef.current.srcObject = stream
         await videoRef.current.play()
         setCamera(stream)
         setStatus('Point at QR code')
-        scanQRCode()
+        scanLoop()
       }
-    } catch (e: any) {
+    } catch (e) {
       setPermissionDenied(true)
-      setStatus('Camera access denied')
     }
   }
 
-  function scanQRCode() {
+  function scanLoop() {
     if (!videoRef.current || !canvasRef.current || loading) {
-      animationRef.current = requestAnimationFrame(scanQRCode)
+      animationRef.current = requestAnimationFrame(scanLoop)
       return
     }
 
@@ -61,7 +54,7 @@ export default function ScanPage() {
     const ctx = canvas.getContext('2d')
     
     if (!ctx || video.readyState !== video.HAVE_ENOUGH_DATA) {
-      animationRef.current = requestAnimationFrame(scanQRCode)
+      animationRef.current = requestAnimationFrame(scanLoop)
       return
     }
 
@@ -74,66 +67,49 @@ export default function ScanPage() {
 
     if (code && code.data.includes('/view/')) {
       const markerId = code.data.split('/view/')[1]?.split(/[?&]/)[0]
-      
-      if (markerId && !loadedMarkerIds.includes(markerId) && lastDetectedRef.current !== markerId) {
+      if (markerId && !loadedIds.includes(markerId) && lastDetectedRef.current !== markerId) {
         lastDetectedRef.current = markerId
-        loadAndLaunchAR(markerId)
+        addModel(markerId)
       }
     }
 
-    animationRef.current = requestAnimationFrame(scanQRCode)
+    animationRef.current = requestAnimationFrame(scanLoop)
   }
 
-  async function loadAndLaunchAR(markerId: string) {
-    if (loadedMarkerIds.includes(markerId)) {
-      setStatus('Already viewed!')
-      return
-    }
-
+  async function addModel(markerId: string) {
     setLoading(true)
     setStatus('Loading...')
     
-    const { data } = await supabase
-      .from('image_markers')
-      .select('*')
-      .eq('id', markerId)
-      .single()
+    const { data } = await supabase.from('image_markers').select('*').eq('id', markerId).single()
     
-    if (!data) {
-      setStatus('Not found')
-      setLoading(false)
-      return
+    if (data) {
+      setModels(prev => [...prev, data])
+      setLoadedIds(prev => [...prev, markerId])
+      setStatus(`Added: ${data.name}`)
     }
-
-    setLoadedMarkerIds(prev => [...prev, markerId])
+    
     setLoading(false)
-    setStatus(`Opening AR: ${data.name}...`)
-    
-    // Launch AR directly
-    const isAndroid = /Android/.test(navigator.userAgent)
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+    setTimeout(() => setStatus('Scan more QR codes'), 1500)
+  }
 
-    if (isAndroid) {
-      // Android: Scene Viewer opens camera with model
-      const intent = `intent://arvr.google.com/scene-viewer/1.0?file=${encodeURIComponent(data.glb_url)}#Intent;scheme=https;package=com.google.ar.core;action=android.intent.action.VIEW;end`
-      window.location.href = intent
-    } else if (isIOS) {
-      // iOS: Use USDZ if available, otherwise show model-viewer page
-      // Quick Look requires USDZ format, but we'll redirect to view page
-      window.location.href = `/view/${markerId}`
-    } else {
-      // Desktop: Go to view page
-      window.location.href = `/view/${markerId}`
-    }
+  function removeModel(id: string) {
+    setModels(prev => prev.filter(m => m.id !== id))
+    setLoadedIds(prev => prev.filter(i => i !== id))
+  }
+
+  function clearAll() {
+    setModels([])
+    setLoadedIds([])
+    setStatus('All cleared')
   }
 
   return (
-    <div className="fixed inset-0 bg-black text-white">
+    <div className="fixed inset-0 bg-black text-white overflow-hidden">
       {!permissionAsked ? (
         <div className="h-full flex flex-col items-center justify-center p-8 text-center">
           <div style={{ fontSize: 80, marginBottom: 30 }}>📷</div>
           <h2 className="text-2xl font-bold mb-4">AR Scanner</h2>
-          <p className="text-gray-400 mb-8">Scan QR codes to view 3D models in AR</p>
+          <p className="text-gray-400 mb-8">Scan QR codes to add 3D models</p>
           <button onClick={requestCamera} style={{
             background: '#4da6ff', color: 'white',
             padding: '18px 50px', borderRadius: 30,
@@ -155,32 +131,71 @@ export default function ScanPage() {
         </div>
       ) : (
         <>
+          {/* Camera background */}
           <video ref={videoRef} playsInline muted autoPlay className="absolute inset-0 w-full h-full object-cover" />
           <canvas ref={canvasRef} className="hidden" />
 
           {/* Header */}
-          <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-center" style={{ background: 'rgba(0,0,0,0.5)' }}>
+          <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-center z-50" style={{ background: 'rgba(0,0,0,0.4)' }}>
             <a href="/" className="text-white text-sm">← Back</a>
-            <span className="text-xs opacity-75">Scanner</span>
-            <span className="text-xs opacity-75">{loadedMarkerIds.length} viewed</span>
+            <span className="text-xs">{models.length} models</span>
+            {models.length > 0 && <button onClick={clearAll} className="text-red-400 text-xs">Clear</button>}
           </div>
 
           {/* Status */}
-          <div className="absolute top-16 left-1/2 -translate-x-1/2 px-4 py-2 rounded-full text-sm" style={{ background: 'rgba(0,0,0,0.5)' }}>
-            {loading ? '⏳ Loading...' : status}
+          <div className="absolute top-16 left-1/2 -translate-x-1/2 px-4 py-2 rounded-full text-xs z-50" style={{ background: 'rgba(0,0,0,0.5)' }}>
+            {status}
           </div>
 
-          {/* Center reticle */}
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div style={{ width: 200, height: 200, border: '2px solid rgba(255,255,255,0.3)', borderRadius: 20 }} />
+          {/* Models overlaid on camera */}
+          <div className="absolute inset-0 pointer-events-none z-40">
+            {models.map((model, i) => {
+              const positions = [
+                { left: '10%', top: '20%' },
+                { left: '55%', top: '20%' },
+                { left: '10%', top: '50%' },
+                { left: '55%', top: '50%' },
+              ]
+              const pos = positions[i % positions.length]
+              
+              return (
+                <div
+                  key={model.id}
+                  className="absolute pointer-events-auto"
+                  style={{
+                    left: pos.left,
+                    top: pos.top,
+                    width: '35%',
+                    height: '200px'
+                  }}
+                >
+                  <model-viewer
+                    src={model.glb_url}
+                    alt={model.name}
+                    camera-controls
+                    auto-rotate
+                    style={{ width: '100%', height: '100%' }}
+                  />
+                  <div className="absolute -top-6 left-0 right-0 text-center">
+                    <span className="px-3 py-1 rounded-full text-xs bg-black/50">{model.name}</span>
+                  </div>
+                  <button
+                    onClick={() => removeModel(model.id)}
+                    className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 rounded-full text-white text-xs z-50"
+                  >
+                    ×
+                  </button>
+                </div>
+              )
+            })}
           </div>
 
-          {/* Bottom info */}
-          <div className="absolute bottom-0 left-0 right-0 p-8 text-center" style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.8), transparent)' }}>
-            <div style={{ fontSize: 32, marginBottom: 8 }}>📷</div>
-            <p className="text-base">Point camera at QR code</p>
-            <p className="text-xs text-gray-400 mt-2">AR will open automatically</p>
+          {/* Bottom bar */}
+          <div className="absolute bottom-0 left-0 right-0 p-4 z-50" style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.7), transparent)' }}>
+            <p className="text-center text-sm">📷 Point at QR to add model</p>
           </div>
+
+          <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.5.0/model-viewer.min.js" />
         </>
       )}
     </div>
