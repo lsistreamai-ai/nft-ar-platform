@@ -16,7 +16,7 @@ export default function ScanPage() {
   const [modelViewerLoaded, setModelViewerLoaded] = useState(false)
   const animationRef = useRef<number>(0)
   const lastMarkerRef = useRef<string>('')
-  const qrLostTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const lastQRTimestampRef = useRef<number>(0)
 
   useEffect(() => {
     const script = document.createElement('script')
@@ -28,7 +28,6 @@ export default function ScanPage() {
     return () => {
       if (camera) camera.getTracks().forEach(t => t.stop())
       cancelAnimationFrame(animationRef.current)
-      if (qrLostTimerRef.current) clearTimeout(qrLostTimerRef.current)
     }
   }, [])
 
@@ -78,27 +77,25 @@ export default function ScanPage() {
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
     const code = jsQR(imageData.data, imageData.width, canvas.height)
 
+    const now = Date.now()
+
     if (code && code.data.includes('/view/')) {
       const markerId = code.data.split('/view/')[1]?.split(/[?&]/)[0]
       
-      // QR detected - clear the "lost" timer
-      if (qrLostTimerRef.current) {
-        clearTimeout(qrLostTimerRef.current)
-        qrLostTimerRef.current = null
-      }
+      // Update timestamp - QR is visible
+      lastQRTimestampRef.current = now
       
       if (markerId && markerId !== lastMarkerRef.current) {
         lastMarkerRef.current = markerId
         loadModel(markerId)
       }
     } else {
-      // No QR detected - set timer to hide model after 500ms
-      if (!qrLostTimerRef.current && currentModel) {
-        qrLostTimerRef.current = setTimeout(() => {
-          setCurrentModel(null)
-          lastMarkerRef.current = ''
-          setStatus('Point at QR code')
-        }, 500)
+      // No QR detected
+      // If more than 200ms since last QR, hide model
+      if (currentModel && (now - lastQRTimestampRef.current) > 200) {
+        setCurrentModel(null)
+        lastMarkerRef.current = ''
+        setStatus('Point at QR code')
       }
     }
 
@@ -150,7 +147,6 @@ export default function ScanPage() {
         </div>
       ) : (
         <>
-          {/* Camera background */}
           <video 
             ref={videoRef} 
             playsInline 
@@ -167,7 +163,6 @@ export default function ScanPage() {
           />
           <canvas ref={canvasRef} style={{ display: 'none' }} />
 
-          {/* Header */}
           <div style={{
             position: 'fixed',
             top: 0,
@@ -185,7 +180,6 @@ export default function ScanPage() {
             <span></span>
           </div>
 
-          {/* Status */}
           <div style={{
             position: 'fixed',
             top: 70,
@@ -200,7 +194,6 @@ export default function ScanPage() {
             {status}
           </div>
 
-          {/* Model in center - no border, no X button */}
           {modelViewerLoaded && currentModel && (
             <div style={{
               position: 'absolute',
@@ -216,15 +209,11 @@ export default function ScanPage() {
                 alt={currentModel.name}
                 camera-controls
                 auto-rotate
-                style={{ 
-                  width: '100%', 
-                  height: '100%'
-                }}
+                style={{ width: '100%', height: '100%' }}
               />
             </div>
           )}
 
-          {/* Bottom hint */}
           <div style={{
             position: 'fixed',
             bottom: 0,
