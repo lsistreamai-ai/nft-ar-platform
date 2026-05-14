@@ -17,7 +17,7 @@ export default function ScanPage() {
   const [permissionAsked, setPermissionAsked] = useState(false)
   const [permissionDenied, setPermissionDenied] = useState(false)
   const [placedModels, setPlacedModels] = useState<PlacedModel[]>([])
-  const [loadedMarkerIds, setLoadedMarkerIds] = useState<Set<string>>(new Set())
+  const [loadedMarkerIds, setLoadedMarkerIds] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
   const animationRef = useRef<number>(0)
   const lastDetectedRef = useRef<string>('')
@@ -80,8 +80,7 @@ export default function ScanPage() {
     if (code && code.data.includes('/view/')) {
       const markerId = code.data.split('/view/')[1]?.split(/[?&]/)[0]
       
-      // Only load if not already loaded and not currently loading
-      if (markerId && !loadedMarkerIds.has(markerId) && !loading && lastDetectedRef.current !== markerId) {
+      if (markerId && !loadedMarkerIds.includes(markerId) && !loading && lastDetectedRef.current !== markerId) {
         lastDetectedRef.current = markerId
         addModel(markerId)
       }
@@ -91,7 +90,7 @@ export default function ScanPage() {
   }
 
   async function addModel(markerId: string) {
-    if (loadedMarkerIds.has(markerId)) {
+    if (loadedMarkerIds.includes(markerId)) {
       setStatus('Already loaded!')
       return
     }
@@ -117,7 +116,7 @@ export default function ScanPage() {
     }
     
     setPlacedModels(prev => [...prev, newModel])
-    setLoadedMarkerIds(prev => new Set([...prev, markerId]))
+    setLoadedMarkerIds(prev => [...prev, markerId])
     setStatus(`Added: ${data.name}`)
     setLoading(false)
     
@@ -126,16 +125,12 @@ export default function ScanPage() {
 
   function removeModel(instanceId: string, markerId: string) {
     setPlacedModels(prev => prev.filter(m => m.instanceId !== instanceId))
-    setLoadedMarkerIds(prev => {
-      const newSet = new Set(prev)
-      newSet.delete(markerId)
-      return newSet
-    })
+    setLoadedMarkerIds(prev => prev.filter(id => id !== markerId))
   }
 
   function clearAll() {
     setPlacedModels([])
-    setLoadedMarkerIds(new Set())
+    setLoadedMarkerIds([])
     setStatus('All models cleared')
   }
 
@@ -182,7 +177,6 @@ export default function ScanPage() {
             {loading ? '⏳ Loading...' : status}
           </div>
 
-          {/* Models */}
           <div className="absolute inset-0 pointer-events-none">
             {placedModels.map((model, index) => (
               <div 
