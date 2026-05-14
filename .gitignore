@@ -5,3 +5,4 @@ node_modules/
 .DS_Store
 public/uploads/*
 !public/uploads/.gitkeep
+.vercel

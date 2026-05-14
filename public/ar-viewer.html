@@ -3,23 +3,20 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Image AR Viewer</title>
-  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.0/dist/mindar-image-aframe.prod.js"></script>
+  <title>AR Viewer</title>
   <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
+  <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
   <style>
-    body { margin: 0; overflow: hidden; background: black; }
-    .info {
+    body { margin: 0; overflow: hidden; background: black; font-family: -apple-system, sans-serif; }
+    .overlay {
       position: fixed;
-      top: 10px;
-      left: 10px;
+      top: 0;
+      left: 0;
+      right: 0;
       z-index: 999;
-      color: white;
       background: rgba(0,0,0,0.8);
       padding: 12px 16px;
-      border-radius: 8px;
-      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-      font-size: 13px;
-      max-width: 250px;
+      color: white;
     }
     .back {
       position: fixed;
@@ -31,7 +28,6 @@
       padding: 10px 20px;
       border-radius: 8px;
       text-decoration: none;
-      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
       font-weight: bold;
     }
     .loading {
@@ -40,8 +36,8 @@
       left: 50%;
       transform: translate(-50%, -50%);
       color: white;
-      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
       text-align: center;
+      z-index: 998;
     }
     .spinner {
       width: 40px;
@@ -53,68 +49,126 @@
       margin: 0 auto 15px;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
+    .status { font-size: 14px; }
+    .marker-list {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      z-index: 999;
+      background: rgba(0,0,0,0.85);
+      padding: 16px;
+      color: white;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    .marker-item {
+      padding: 8px;
+      margin: 4px 0;
+      background: rgba(255,255,255,0.1);
+      border-radius: 8px;
+    }
+    .note {
+      position: fixed;
+      top: 60px;
+      left: 10px;
+      right: 10px;
+      z-index: 999;
+      background: rgba(255,200,0,0.9);
+      color: black;
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 13px;
+    }
   </style>
 </head>
 <body>
-  <div class="info" id="status">Loading markers...</div>
+  <div class="overlay" id="status">
+    <strong>AR Viewer</strong>
+    <div class="status" id="status-text">Loading...</div>
+  </div>
+  
   <a href="/" class="back">← Back</a>
   
-  <div id="loading" class="loading">
+  <div class="loading" id="loading">
     <div class="spinner"></div>
     <div>Initializing camera...</div>
   </div>
-  
-  <div id="scene" style="display: none;"></div>
+
+  <div id="scene"></div>
 
   <script>
     const SUPABASE_URL = 'https://zywgdjbuttwyingoldgb.supabase.co'
     const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp5d2dkamJ1dHR3eWluZ29sZGdiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgyMjk2NzIsImV4cCI6MjA5MzgwNTY3Mn0.OQhE8u8JdmDLi-eBcguq7B81rFfOXPJ43vRpG_7aMdw'
 
-    // For now, use Hiro marker as fallback (MindAR NFT requires backend processing)
-    // This is a simplified version that shows the concept
-    
     async function init() {
       try {
+        // Fetch markers
         const res = await fetch(`${SUPABASE_URL}/rest/v1/image_markers`, {
           headers: { 'apikey': SUPABASE_KEY }
         })
         const markers = await res.json()
         
         if (markers.length === 0) {
-          document.getElementById('status').textContent = 'No markers configured'
-          document.getElementById('loading').innerHTML = '<div>No markers yet. Add some in the dashboard.</div>'
+          document.getElementById('loading').innerHTML = `
+            <div style="font-size: 18px;">No markers yet</div>
+            <div style="font-size: 14px; margin-top: 10px; opacity: 0.7;">Add markers in the dashboard first</div>
+            <a href="/" style="display: inline-block; margin-top: 20px; padding: 12px 24px; background: white; color: black; border-radius: 8px; text-decoration: none;">Go to Dashboard</a>
+          `
           return
         }
-        
-        document.getElementById('status').textContent = `${markers.length} markers loaded`
+
+        document.getElementById('status-text').textContent = `${markers.length} markers loaded`
         document.getElementById('loading').style.display = 'none'
-        
-        // For demonstration, showing marker list
-        // Full NFT implementation requires image compilation server-side
+
+        // For now, use Hiro marker as demonstration
+        // Full image tracking requires MindAR compilation
         const sceneHTML = `
-          <a-scene mindar-image-vr-mode-ui="enabled: false" vr-mode-ui="enabled: false" embedded color-space="sRGB" renderer="antialias: true">
-            <a-assets>
-              ${markers.map((m, i) => `<a-asset-item id="model-${i}" src="${m.glb_url}"></a-asset-item>`).join('')}
-            </a-assets>
-            
-            <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+          <a-scene 
+            embedded 
+            vr-mode-ui="enabled: false"
+            arjs="sourceType: webcam; debugUIEnabled: false;"
+          >
+            <a-marker preset="hiro">
+              <a-box position="0 0.5 0" color="red" depth="0.5" height="0.5" width="0.5"></a-box>
+            </a-marker>
+            <a-marker preset="kanji">
+              <a-box position="0 0.5 0" color="blue" depth="0.5" height="0.5" width="0.5"></a-box>
+            </a-marker>
+            <a-entity camera></a-entity>
           </a-scene>
-          
-          <div style="position: fixed; bottom: 20px; left: 20px; right: 20px; z-index: 999; color: white; font-family: sans-serif; font-size: 14px; background: rgba(0,0,0,0.8); padding: 15px; border-radius: 12px;">
-            <div style="font-weight: bold; margin-bottom: 8px;">Configured Markers:</div>
-            ${markers.map(m => `<div style="margin: 4px 0;">• ${m.name}</div>`).join('')}
-            <div style="margin-top: 12px; font-size: 12px; color: #888;">
-              Note: Image tracking requires backend compilation. Simplified demo shown.
-            </div>
-          </div>
         `
         
         document.getElementById('scene').innerHTML = sceneHTML
-        document.getElementById('scene').style.display = 'block'
+
+        // Show note about image tracking
+        const note = document.createElement('div')
+        note.className = 'note'
+        note.innerHTML = `
+          <strong>📷 Test Mode</strong><br>
+          This demo shows Hiro/Kanji markers. Your ${markers.length} image(s) are saved and ready for full image tracking integration.
+        `
+        document.body.appendChild(note)
+
+        // Show marker list
+        const list = document.createElement('div')
+        list.className = 'marker-list'
+        list.innerHTML = `
+          <div style="font-weight: bold; margin-bottom: 8px;">Your Configured Images:</div>
+          ${markers.map(m => `
+            <div class="marker-item">
+              <div style="font-weight: 500;">${m.name}</div>
+              <div style="font-size: 12px; opacity: 0.7;">Scale: ${m.scale} | GLB: ${m.glb_url.substring(0, 40)}...</div>
+            </div>
+          `).join('')}
+        `
+        document.body.appendChild(list)
         
       } catch (e) {
-        document.getElementById('status').textContent = 'Error: ' + e.message
-        document.getElementById('loading').innerHTML = '<div style="color: #ff6b6b;">Error loading markers</div>'
+        document.getElementById('loading').innerHTML = `
+          <div style="color: #ff6b6b;">Error: ${e.message}</div>
+          <a href="/" style="display: inline-block; margin-top: 20px; padding: 12px 24px; background: white; color: black; border-radius: 8px; text-decoration: none;">Back to Dashboard</a>
+        `
       }
     }
     
