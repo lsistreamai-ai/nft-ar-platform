@@ -17,8 +17,10 @@ export default function ScanPage() {
   const [permissionAsked, setPermissionAsked] = useState(false)
   const [permissionDenied, setPermissionDenied] = useState(false)
   const [placedModels, setPlacedModels] = useState<PlacedModel[]>([])
-  const [lastScannedId, setLastScannedId] = useState('')
+  const [loadedMarkerIds, setLoadedMarkerIds] = useState<Set<string>>(new Set())
+  const [loading, setLoading] = useState(false)
   const animationRef = useRef<number>(0)
+  const lastDetectedRef = useRef<string>('')
 
   useEffect(() => {
     return () => stopCamera()
@@ -54,7 +56,7 @@ export default function ScanPage() {
   }
 
   function scanQRCode() {
-    if (!videoRef.current || !canvasRef.current) {
+    if (!videoRef.current || !canvasRef.current || loading) {
       animationRef.current = requestAnimationFrame(scanQRCode)
       return
     }
@@ -77,10 +79,11 @@ export default function ScanPage() {
 
     if (code && code.data.includes('/view/')) {
       const markerId = code.data.split('/view/')[1]?.split(/[?&]/)[0]
-      if (markerId && markerId !== lastScannedId) {
-        setLastScannedId(markerId)
+      
+      // Only load if not already loaded and not currently loading
+      if (markerId && !loadedMarkerIds.has(markerId) && !loading && lastDetectedRef.current !== markerId) {
+        lastDetectedRef.current = markerId
         addModel(markerId)
-        setTimeout(() => setLastScannedId(''), 2000)
       }
     }
 
@@ -88,6 +91,12 @@ export default function ScanPage() {
   }
 
   async function addModel(markerId: string) {
+    if (loadedMarkerIds.has(markerId)) {
+      setStatus('Already loaded!')
+      return
+    }
+
+    setLoading(true)
     setStatus('Loading model...')
     
     const { data } = await supabase
@@ -98,6 +107,7 @@ export default function ScanPage() {
     
     if (!data) {
       setStatus('Model not found')
+      setLoading(false)
       return
     }
 
@@ -107,16 +117,25 @@ export default function ScanPage() {
     }
     
     setPlacedModels(prev => [...prev, newModel])
+    setLoadedMarkerIds(prev => new Set([...prev, markerId]))
     setStatus(`Added: ${data.name}`)
+    setLoading(false)
+    
     setTimeout(() => setStatus('Point at QR to add more'), 1500)
   }
 
-  function removeModel(instanceId: string) {
+  function removeModel(instanceId: string, markerId: string) {
     setPlacedModels(prev => prev.filter(m => m.instanceId !== instanceId))
+    setLoadedMarkerIds(prev => {
+      const newSet = new Set(prev)
+      newSet.delete(markerId)
+      return newSet
+    })
   }
 
   function clearAll() {
     setPlacedModels([])
+    setLoadedMarkerIds(new Set())
     setStatus('All models cleared')
   }
 
@@ -126,9 +145,7 @@ export default function ScanPage() {
         <div className="h-full flex flex-col items-center justify-center p-8 text-center">
           <div style={{ fontSize: 80, marginBottom: 30 }}>📷</div>
           <h2 className="text-2xl font-bold mb-4">AR Multi-Model Scanner</h2>
-          <p className="text-gray-400 mb-8">
-            Scan QR codes to place multiple 3D models together
-          </p>
+          <p className="text-gray-400 mb-8">Scan QR codes to place models</p>
           <button onClick={requestCamera} style={{
             background: '#4da6ff', color: 'white',
             padding: '18px 50px', borderRadius: 30,
@@ -150,70 +167,62 @@ export default function ScanPage() {
         </div>
       ) : (
         <>
-          {/* Camera feed */}
           <video ref={videoRef} playsInline muted autoPlay className="absolute inset-0 w-full h-full object-cover" />
           <canvas ref={canvasRef} className="hidden" />
 
-          {/* Header */}
           <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-center" style={{ background: 'rgba(0,0,0,0.6)' }}>
             <a href="/" className="text-white">← Back</a>
             <span className="text-sm">{placedModels.length} models</span>
             {placedModels.length > 0 && (
-              <button onClick={clearAll} className="text-red-400 text-sm">Clear All</button>
+              <button onClick={clearAll} className="text-red-400 text-sm">Clear</button>
             )}
           </div>
 
-          {/* Status */}
           <div className="absolute top-20 left-1/2 -translate-x-1/2 px-4 py-2 rounded-full text-sm" style={{ background: 'rgba(0,0,0,0.6)' }}>
-            {status}
+            {loading ? '⏳ Loading...' : status}
           </div>
 
-          {/* Models overlay */}
-          <div className="absolute bottom-0 left-0 right-0 p-4" style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.8), transparent)' }}>
-            {placedModels.length > 0 ? (
-              <div className="space-y-2">
-                <p className="text-xs text-gray-400 mb-2">Models placed:</p>
-                <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
-                  {placedModels.map(model => (
-                    <div key={model.instanceId} className="flex items-center gap-2 px-3 py-1 rounded-full text-sm" style={{ background: 'rgba(255,255,255,0.1)' }}>
-                      <span>{model.name}</span>
-                      <button onClick={() => removeModel(model.instanceId)} className="text-red-400 ml-1">×</button>
-                    </div>
-                  ))}
-                </div>
-                <p className="text-xs text-gray-400 mt-2">Scan more QR codes to add models</p>
-              </div>
-            ) : (
-              <div className="text-center py-4">
-                <p>Point camera at QR code</p>
-                <p className="text-xs text-gray-400 mt-1">Models will appear here</p>
-              </div>
-            )}
-          </div>
-
-          {/* Model viewers for each placed model */}
+          {/* Models */}
           <div className="absolute inset-0 pointer-events-none">
             {placedModels.map((model, index) => (
               <div 
                 key={model.instanceId} 
-                className="absolute"
+                className="absolute pointer-events-auto"
                 style={{
-                  left: `${10 + (index % 3) * 30}%`,
-                  top: `${30 + Math.floor(index / 3) * 20}%`,
-                  width: '35%',
-                  height: '150px',
-                  pointerEvents: 'auto'
+                  left: `${5 + (index % 3) * 33}%`,
+                  top: `${25 + Math.floor(index / 3) * 25}%`,
+                  width: '30%',
+                  height: '150px'
                 }}
               >
                 <model-viewer
                   src={model.glb_url}
                   alt={model.name}
                   camera-controls
-                  auto-rotqate
-                  style={{ width: '100%', height: '100%', backgroundColor: 'transparent' }}
+                  auto-rotate
+                  style={{ width: '100%', height: '100%' }}
                 />
+                <button
+                  onClick={() => removeModel(model.instanceId, model.id)}
+                  className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 rounded-full text-white text-xs"
+                >
+                  ×
+                </button>
               </div>
             ))}
+          </div>
+
+          <div className="absolute bottom-0 left-0 right-0 p-4" style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.8), transparent)' }}>
+            {placedModels.length > 0 && (
+              <div className="flex flex-wrap gap-2 mb-2">
+                {placedModels.map(model => (
+                  <span key={model.instanceId} className="px-3 py-1 rounded-full text-xs" style={{ background: 'rgba(255,255,255,0.1)' }}>
+                    {model.name}
+                  </span>
+                ))}
+              </div>
+            )}
+            <p className="text-xs text-gray-400 text-center">Point at new QR to add model</p>
           </div>
         </>
       )}
