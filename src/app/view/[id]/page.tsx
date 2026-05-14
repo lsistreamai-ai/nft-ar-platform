@@ -7,9 +7,13 @@ import type { ImageMarker } from '@/types'
 export default function ARViewPage({ params }: { params: { id: string } }) {
   const [marker, setMarker] = useState<ImageMarker | null>(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  const [isAndroid, setIsAndroid] = useState(false)
+  const [isIOS, setIsIOS] = useState(false)
+  const [launched, setLaunched] = useState(false)
 
   useEffect(() => {
+    setIsAndroid(/Android/.test(navigator.userAgent))
+    setIsIOS(/iPad|iPhone|iPod/.test(navigator.userAgent))
     loadMarker()
   }, [params.id])
 
@@ -24,89 +28,109 @@ export default function ARViewPage({ params }: { params: { id: string } }) {
       if (error) throw error
       setMarker(data)
     } catch (e: any) {
-      setError(e.message)
+      console.error(e)
     }
     setLoading(false)
   }
 
+  // Auto-launch AR for Android
+  useEffect(() => {
+    if (marker && isAndroid && !launched) {
+      setLaunched(true)
+      const intent = `intent://arvr.google.com/scene-viewer/1.0?file=${encodeURIComponent(marker.glb_url)}#Intent;scheme=https;package=com.google.ar.core;action=android.intent.action.VIEW;S.browser_fallback_url=${encodeURIComponent(window.location.href)};end`
+      window.location.href = intent
+    }
+  }, [marker, isAndroid, launched])
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-900">
-        <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+        <div className="text-center text-white">
+          <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p>Loading AR...</p>
+        </div>
       </div>
     )
   }
 
-  if (error || !marker) {
+  if (!marker) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-900 p-4">
-        <div className="text-center text-white max-w-md">
-          <div className="text-6xl mb-4">❌</div>
+        <div className="text-center text-white">
           <h1 className="text-xl font-bold mb-2">Marker Not Found</h1>
-          <p className="text-gray-400 mb-6">{error || 'This marker does not exist'}</p>
-          <a href="/" className="btn btn-primary">Back to Dashboard</a>
+          <a href="/" className="btn btn-primary">Back</a>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white p-4">
-      <header className="max-w-4xl mx-auto mb-6">
-        <a href="/" className="text-blue-400 hover:underline text-sm">← Back to Dashboard</a>
-      </header>
+    <div className="min-h-screen bg-gray-900 text-white" style={{ position: 'relative' }}>
+      <model-viewer
+        src={marker.glb_url}
+        alt={marker.name}
+        ar
+        ar-modes="webxr scene-viewer quick-look"
+        ar-scale="fixed"
+        camera-controls
+        auto-rotate
+        shadow-intensity="1"
+        style={{ width: '100%', height: '100vh' }}
+      >
+        <button 
+          slot="ar-button"
+          style={{
+            position: 'absolute',
+            bottom: '100px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: '#4da6ff',
+            color: 'white',
+            padding: '20px 50px',
+            borderRadius: '30px',
+            fontWeight: 'bold',
+            border: 'none',
+            fontSize: '20px',
+            boxShadow: '0 4px 20px rgba(77,166,255,0.5)'
+          }}
+        >
+          📱 View in AR
+        </button>
+      </model-viewer>
 
-      <main className="max-w-4xl mx-auto">
-        <h1 className="text-2xl font-bold mb-2">{marker.name}</h1>
-        <p className="text-gray-400 mb-6">Tap the button below to view in AR</p>
+      <a 
+        href="/"
+        style={{
+          position: 'fixed',
+          top: '20px',
+          left: '20px',
+          zIndex: 999,
+          background: 'rgba(0,0,0,0.7)',
+          color: 'white',
+          padding: '12px 20px',
+          borderRadius: '10px',
+          textDecoration: 'none'
+        }}
+      >
+        ← Back
+      </a>
 
-        {/* Model Viewer */}
-        <div className="bg-gray-800 rounded-2xl overflow-hidden mb-6">
-          <model-viewer
-            src={marker.glb_url}
-            alt={marker.name}
-            ar
-            ar-modes="webxr scene-viewer quick-look"
-            ar-scale="fixed"
-            camera-controls
-            auto-rotate
-            shadow-intensity="1"
-            style={{ width: '100%', height: '500px', backgroundColor: '#1a1a2e' }}
-          >
-            <button 
-              slot="ar-button" 
-              style={{
-                position: 'absolute',
-                bottom: '20px',
-                left: '50%',
-                transform: 'translateX(-50%)',
-                background: '#4da6ff',
-                color: 'black',
-                padding: '14px 28px',
-                borderRadius: '20px',
-                fontWeight: 'bold',
-                border: 'none',
-                fontSize: '16px',
-                cursor: 'pointer'
-              }}
-            >
-              📱 View in AR
-            </button>
-          </model-viewer>
-        </div>
-
-        {/* Instructions */}
-        <div className="mt-6 p-4 bg-blue-900/30 border border-blue-500/30 rounded-xl">
-          <h3 className="font-bold text-blue-400 mb-2">📱 How to Use</h3>
-          <ul className="text-sm space-y-1 text-gray-300">
-            <li>• Tap <strong>"View in AR"</strong> button above</li>
-            <li>• Point camera at a flat surface</li>
-            <li>• Tap to place the 3D model</li>
-            <li>• <strong>iOS:</strong> Opens AR Quick Look</li>
-            <li>• <strong>Android:</strong> Opens Scene Viewer</li>
-          </ul>
-        </div>
-      </main>
+      <div 
+        style={{
+          position: 'fixed',
+          top: '20px',
+          right: '20px',
+          zIndex: 999,
+          background: 'rgba(0,0,0,0.7)',
+          color: 'white',
+          padding: '10px 16px',
+          borderRadius: '10px',
+          fontSize: '14px'
+        }}
+      >
+        {isIOS && '🍎 iOS'}
+        {isAndroid && '🤖 Android'}
+      </div>
 
       <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.5.0/model-viewer.min.js" />
     </div>
