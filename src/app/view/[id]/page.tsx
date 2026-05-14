@@ -1,103 +1,106 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import type { ImageMarker } from '@/types'
 
 export default function ARViewPage({ params }: { params: { id: string } }) {
   const [marker, setMarker] = useState<ImageMarker | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [isAndroid, setIsAndroid] = useState(false)
-  const [isIOS, setIsIOS] = useState(false)
-  const [launched, setLaunched] = useState(false)
 
   useEffect(() => {
-    setIsAndroid(/Android/.test(navigator.userAgent))
-    setIsIOS(/iPad|iPhone|iPod/.test(navigator.userAgent))
     loadMarker()
   }, [params.id])
 
-  async function loadMarker() {
-    try {
-      const { data, error } = await supabase
-        .from('image_markers')
-        .select('*')
-        .eq('id', params.id)
-        .single()
-      
-      if (error) throw error
-      setMarker(data)
-    } catch (e: any) {
-      console.error(e)
+  useEffect(() => {
+    // Auto-start AR camera
+    if (marker) {
+      startARCamera()
     }
-    setLoading(false)
+  }, [marker])
+
+  async function loadMarker() {
+    const { data } = await supabase
+      .from('image_markers')
+      .select('*')
+      .eq('id', params.id)
+      .single()
+    
+    if (data) setMarker(data)
   }
 
-  // Auto-launch AR for Android
-  useEffect(() => {
-    if (marker && isAndroid && !launched) {
-      setLaunched(true)
-      const intent = `intent://arvr.google.com/scene-viewer/1.0?file=${encodeURIComponent(marker.glb_url)}#Intent;scheme=https;package=com.google.ar.core;action=android.intent.action.VIEW;S.browser_fallback_url=${encodeURIComponent(window.location.href)};end`
-      window.location.href = intent
-    }
-  }, [marker, isAndroid, launched])
+  function startARCamera() {
+    if (!marker) return
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-900">
-        <div className="text-center text-white">
-          <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p>Loading AR...</p>
-        </div>
-      </div>
-    )
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+    const isAndroid = /Android/.test(navigator.userAgent)
+
+    if (isAndroid) {
+      // Android: Launch Google Scene Viewer (camera + AR)
+      const url = encodeURIComponent(marker.glb_url)
+      const fallback = encodeURIComponent(window.location.href)
+      window.location.href = `intent://arvr.google.com/scene-viewer/1.0?file=${url}&mode=ar_only#Intent;scheme=https;package=com.google.ar.core;action=android.intent.action.VIEW;S.browser_fallback_url=${fallback};end`
+    }
+    // iOS will use model-viewer with ar
   }
 
   if (!marker) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-900 p-4">
-        <div className="text-center text-white">
-          <h1 className="text-xl font-bold mb-2">Marker Not Found</h1>
-          <a href="/" className="btn btn-primary">Back</a>
-        </div>
+      <div className="fixed inset-0 flex items-center justify-center bg-black">
+        <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
       </div>
     )
   }
 
+  const isAndroid = /Android/.test(navigator.userAgent)
+
   return (
-    <div className="min-h-screen bg-gray-900 text-white" style={{ position: 'relative' }}>
-      <model-viewer
-        src={marker.glb_url}
-        alt={marker.name}
-        ar
-        ar-modes="webxr scene-viewer quick-look"
-        ar-scale="fixed"
-        camera-controls
-        auto-rotate
-        shadow-intensity="1"
-        style={{ width: '100%', height: '100vh' }}
-      >
-        <button 
-          slot="ar-button"
-          style={{
-            position: 'absolute',
-            bottom: '100px',
+    <div className="fixed inset-0 bg-black">
+      {/* For iOS - model-viewer with AR */}
+      {!isAndroid && (
+        <>
+          <model-viewer
+            src={marker.glb_url}
+            ios-src={marker.glb_url}
+            alt={marker.name}
+            ar
+            ar-modes="webxr quick-look"
+            ar-scale="fixed"
+            quick-look-browsers="safari chrome"
+            style={{ width: '100%', height: '100%' }}
+          >
+          </model-viewer>
+          
+          {/* Prompt for iOS */}
+          <div style={{
+            position: 'fixed',
+            bottom: '60px',
             left: '50%',
             transform: 'translateX(-50%)',
-            background: '#4da6ff',
-            color: 'white',
-            padding: '20px 50px',
+            background: 'white',
+            color: 'black',
+            padding: '18px 40px',
             borderRadius: '30px',
             fontWeight: 'bold',
-            border: 'none',
-            fontSize: '20px',
-            boxShadow: '0 4px 20px rgba(77,166,255,0.5)'
-          }}
-        >
-          📱 View in AR
-        </button>
-      </model-viewer>
+            fontSize: '18px',
+            zIndex: 999
+          }}>
+            📱 Tap to View in AR
+          </div>
+        </>
+      )}
 
+      {/* For Android - loading screen while Scene Viewer launches */}
+      {isAndroid && (
+        <div className="flex items-center justify-center text-white text-center p-8">
+          <div>
+            <div className="text-4xl mb-4">📷</div>
+            <div className="text-xl font-bold">Opening Camera...</div>
+            <div className="text-sm text-gray-400 mt-2">Point at a flat surface</div>
+          </div>
+        </div>
+      )}
+
+      {/* Back button */}
       <a 
         href="/"
         style={{
@@ -114,23 +117,6 @@ export default function ARViewPage({ params }: { params: { id: string } }) {
       >
         ← Back
       </a>
-
-      <div 
-        style={{
-          position: 'fixed',
-          top: '20px',
-          right: '20px',
-          zIndex: 999,
-          background: 'rgba(0,0,0,0.7)',
-          color: 'white',
-          padding: '10px 16px',
-          borderRadius: '10px',
-          fontSize: '14px'
-        }}
-      >
-        {isIOS && '🍎 iOS'}
-        {isAndroid && '🤖 Android'}
-      </div>
 
       <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.5.0/model-viewer.min.js" />
     </div>
