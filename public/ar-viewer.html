@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Image AR Viewer</title>
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.0/dist/mindar-image-aframe.prod.js"></script>
+  <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
+  <style>
+    body { margin: 0; overflow: hidden; background: black; }
+    .info {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      z-index: 999;
+      color: white;
+      background: rgba(0,0,0,0.8);
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      font-size: 13px;
+      max-width: 250px;
+    }
+    .back {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      z-index: 999;
+      background: white;
+      color: black;
+      padding: 10px 20px;
+      border-radius: 8px;
+      text-decoration: none;
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      font-weight: bold;
+    }
+    .loading {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: white;
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      text-align: center;
+    }
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid white;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 15px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div class="info" id="status">Loading markers...</div>
+  <a href="/" class="back">← Back</a>
+  
+  <div id="loading" class="loading">
+    <div class="spinner"></div>
+    <div>Initializing camera...</div>
+  </div>
+  
+  <div id="scene" style="display: none;"></div>
+
+  <script>
+    const SUPABASE_URL = 'https://zywgdjbuttwyingoldgb.supabase.co'
+    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp5d2dkamJ1dHR3eWluZ29sZGdiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgyMjk2NzIsImV4cCI6MjA5MzgwNTY3Mn0.OQhE8u8JdmDLi-eBcguq7B81rFfOXPJ43vRpG_7aMdw'
+
+    // For now, use Hiro marker as fallback (MindAR NFT requires backend processing)
+    // This is a simplified version that shows the concept
+    
+    async function init() {
+      try {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/image_markers`, {
+          headers: { 'apikey': SUPABASE_KEY }
+        })
+        const markers = await res.json()
+        
+        if (markers.length === 0) {
+          document.getElementById('status').textContent = 'No markers configured'
+          document.getElementById('loading').innerHTML = '<div>No markers yet. Add some in the dashboard.</div>'
+          return
+        }
+        
+        document.getElementById('status').textContent = `${markers.length} markers loaded`
+        document.getElementById('loading').style.display = 'none'
+        
+        // For demonstration, showing marker list
+        // Full NFT implementation requires image compilation server-side
+        const sceneHTML = `
+          <a-scene mindar-image-vr-mode-ui="enabled: false" vr-mode-ui="enabled: false" embedded color-space="sRGB" renderer="antialias: true">
+            <a-assets>
+              ${markers.map((m, i) => `<a-asset-item id="model-${i}" src="${m.glb_url}"></a-asset-item>`).join('')}
+            </a-assets>
+            
+            <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+          </a-scene>
+          
+          <div style="position: fixed; bottom: 20px; left: 20px; right: 20px; z-index: 999; color: white; font-family: sans-serif; font-size: 14px; background: rgba(0,0,0,0.8); padding: 15px; border-radius: 12px;">
+            <div style="font-weight: bold; margin-bottom: 8px;">Configured Markers:</div>
+            ${markers.map(m => `<div style="margin: 4px 0;">• ${m.name}</div>`).join('')}
+            <div style="margin-top: 12px; font-size: 12px; color: #888;">
+              Note: Image tracking requires backend compilation. Simplified demo shown.
+            </div>
+          </div>
+        `
+        
+        document.getElementById('scene').innerHTML = sceneHTML
+        document.getElementById('scene').style.display = 'block'
+        
+      } catch (e) {
+        document.getElementById('status').textContent = 'Error: ' + e.message
+        document.getElementById('loading').innerHTML = '<div style="color: #ff6b6b;">Error loading markers</div>'
+      }
+    }
+    
+    init()
+  </script>
+</body>
+</html>
