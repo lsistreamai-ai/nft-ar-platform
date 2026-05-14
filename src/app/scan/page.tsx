@@ -12,15 +12,13 @@ export default function ScanPage() {
   const [status, setStatus] = useState('')
   const [permissionAsked, setPermissionAsked] = useState(false)
   const [permissionDenied, setPermissionDenied] = useState(false)
-  const [models, setModels] = useState<ImageMarker[]>([])
-  const [loadedIds, setLoadedIds] = useState<string[]>([])
-  const [loading, setLoading] = useState(false)
+  const [currentModel, setCurrentModel] = useState<ImageMarker | null>(null)
   const [modelViewerLoaded, setModelViewerLoaded] = useState(false)
   const animationRef = useRef<number>(0)
-  const lastDetectedRef = useRef<string>('')
+  const lastMarkerRef = useRef<string>('')
+  const qrLostTimerRef = useRef<NodeJS.Timeout | null>(null)
 
   useEffect(() => {
-    // Load model-viewer script
     const script = document.createElement('script')
     script.type = 'module'
     script.src = 'https://ajax.googleapis.com/ajax/libs/model-viewer/3.5.0/model-viewer.min.js'
@@ -30,6 +28,7 @@ export default function ScanPage() {
     return () => {
       if (camera) camera.getTracks().forEach(t => t.stop())
       cancelAnimationFrame(animationRef.current)
+      if (qrLostTimerRef.current) clearTimeout(qrLostTimerRef.current)
     }
   }, [])
 
@@ -54,12 +53,11 @@ export default function ScanPage() {
       }
     } catch (e) {
       setPermissionDenied(true)
-      setStatus('Camera denied')
     }
   }
 
   function scanLoop() {
-    if (!videoRef.current || !canvasRef.current || loading) {
+    if (!videoRef.current || !canvasRef.current) {
       animationRef.current = requestAnimationFrame(scanLoop)
       return
     }
@@ -78,55 +76,50 @@ export default function ScanPage() {
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
 
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
-    const code = jsQR(imageData.data, imageData.width, imageData.height)
+    const code = jsQR(imageData.data, imageData.width, canvas.height)
 
     if (code && code.data.includes('/view/')) {
       const markerId = code.data.split('/view/')[1]?.split(/[?&]/)[0]
-      if (markerId && !loadedIds.includes(markerId) && lastDetectedRef.current !== markerId) {
-        lastDetectedRef.current = markerId
-        addModel(markerId)
+      
+      // QR detected - clear the "lost" timer
+      if (qrLostTimerRef.current) {
+        clearTimeout(qrLostTimerRef.current)
+        qrLostTimerRef.current = null
+      }
+      
+      if (markerId && markerId !== lastMarkerRef.current) {
+        lastMarkerRef.current = markerId
+        loadModel(markerId)
+      }
+    } else {
+      // No QR detected - set timer to hide model after 500ms
+      if (!qrLostTimerRef.current && currentModel) {
+        qrLostTimerRef.current = setTimeout(() => {
+          setCurrentModel(null)
+          lastMarkerRef.current = ''
+          setStatus('Point at QR code')
+        }, 500)
       }
     }
 
     animationRef.current = requestAnimationFrame(scanLoop)
   }
 
-  async function addModel(markerId: string) {
-    setLoading(true)
-    setStatus('Loading model...')
+  async function loadModel(markerId: string) {
+    setStatus('Loading...')
     
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from('image_markers')
       .select('*')
       .eq('id', markerId)
       .single()
     
-    if (error) {
-      setStatus('Error: ' + error.message)
-      setLoading(false)
-      return
-    }
-    
     if (data) {
-      setModels(prev => [...prev, data])
-      setLoadedIds(prev => [...prev, markerId])
-      setStatus(`Added: ${data.name}`)
-      lastDetectedRef.current = ''
+      setCurrentModel(data)
+      setStatus(data.name)
+    } else {
+      setStatus('Not found')
     }
-    
-    setLoading(false)
-    setTimeout(() => setStatus('Scan more QR codes'), 2000)
-  }
-
-  function removeModel(id: string) {
-    setModels(prev => prev.filter(m => m.id !== id))
-    setLoadedIds(prev => prev.filter(i => i !== id))
-  }
-
-  function clearAll() {
-    setModels([])
-    setLoadedIds([])
-    setStatus('Cleared')
   }
 
   return (
@@ -135,7 +128,7 @@ export default function ScanPage() {
         <div className="h-full flex flex-col items-center justify-center p-8 text-center">
           <div style={{ fontSize: 80, marginBottom: 30 }}>📷</div>
           <h2 className="text-2xl font-bold mb-4">AR Scanner</h2>
-          <p className="text-gray-400 mb-8">Scan QR codes to add 3D models</p>
+          <p className="text-gray-400 mb-8">Point at QR to show model</p>
           <button onClick={requestCamera} style={{
             background: '#4da6ff', color: 'white',
             padding: '18px 50px', borderRadius: 30,
@@ -184,16 +177,12 @@ export default function ScanPage() {
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
-            background: 'rgba(0,0,0,0.5)',
+            background: 'rgba(0,0,0,0.4)',
             zIndex: 100
           }}>
             <a href="/" style={{ color: 'white', textDecoration: 'none' }}>← Back</a>
-            <span style={{ fontSize: 14 }}>{models.length} models</span>
-            {models.length > 0 && (
-              <button onClick={clearAll} style={{ color: '#ff6b6b', background: 'none', border: 'none' }}>
-                Clear All
-              </button>
-            )}
+            <span style={{ fontSize: 14 }}>Scanner</span>
+            <span></span>
           </div>
 
           {/* Status */}
@@ -204,101 +193,49 @@ export default function ScanPage() {
             transform: 'translateX(-50%)',
             padding: '8px 20px',
             borderRadius: 20,
-            background: 'rgba(0,0,0,0.6)',
+            background: 'rgba(0,0,0,0.5)',
             fontSize: 14,
             zIndex: 100
           }}>
             {status}
           </div>
 
-          {/* Models overlaid on camera */}
-          {modelViewerLoaded && models.map((model, i) => {
-            const positions = [
-              { left: '5%', top: '15%', width: '45%' },
-              { left: '50%', top: '15%', width: '45%' },
-              { left: '5%', top: '45%', width: '45%' },
-              { left: '50%', top: '45%', width: '45%' },
-            ]
-            const pos = positions[i % positions.length]
-            
-            return (
-              <div
-                key={model.id}
-                style={{
-                  position: 'absolute',
-                  left: pos.left,
-                  top: pos.top,
-                  width: pos.width,
-                  height: '180px',
-                  zIndex: 50
+          {/* Model in center - no border, no X button */}
+          {modelViewerLoaded && currentModel && (
+            <div style={{
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: '80%',
+              height: '40%',
+              zIndex: 50
+            }}>
+              <model-viewer
+                src={currentModel.glb_url}
+                alt={currentModel.name}
+                camera-controls
+                auto-rotate
+                style={{ 
+                  width: '100%', 
+                  height: '100%'
                 }}
-              >
-                <model-viewer
-                  src={model.glb_url}
-                  alt={model.name}
-                  camera-controls
-                  auto-rotate
-                  style={{ 
-                    width: '100%', 
-                    height: '100%',
-                    backgroundColor: 'rgba(0,0,0,0.3)',
-                    borderRadius: '10px'
-                  }}
-                />
-                <div style={{
-                  position: 'absolute',
-                  top: -24,
-                  left: 0,
-                  right: 0,
-                  textAlign: 'center'
-                }}>
-                  <span style={{
-                    padding: '4px 12px',
-                    borderRadius: 12,
-                    background: 'rgba(0,0,0,0.6)',
-                    fontSize: 12
-                  }}>
-                    {model.name}
-                  </span>
-                </div>
-                <button
-                  onClick={() => removeModel(model.id)}
-                  style={{
-                    position: 'absolute',
-                    top: -8,
-                    right: -8,
-                    width: 24,
-                    height: 24,
-                    borderRadius: '50%',
-                    background: '#ff4444',
-                    color: 'white',
-                    border: 'none',
-                    fontSize: 14,
-                    cursor: 'pointer',
-                    zIndex: 60
-                  }}
-                >
-                  ×
-                </button>
-              </div>
-            )
-          })}
+              />
+            </div>
+          )}
 
-          {/* Bottom bar */}
+          {/* Bottom hint */}
           <div style={{
             position: 'fixed',
             bottom: 0,
             left: 0,
             right: 0,
             padding: '20px',
-            background: 'linear-gradient(to top, rgba(0,0,0,0.7), transparent)',
+            background: 'linear-gradient(to top, rgba(0,0,0,0.5), transparent)',
             zIndex: 100,
             textAlign: 'center'
           }}>
-            <p style={{ fontSize: 14 }}>📷 Point at QR to add model</p>
-            {models.length === 0 && (
-              <p style={{ fontSize: 12, color: '#999', marginTop: 5 }}>ModelVR loaded: {modelViewerLoaded ? '✓' : '...'}</p>
-            )}
+            <p style={{ fontSize: 13, opacity: 0.8 }}>Point at QR to show • Move away to hide</p>
           </div>
         </>
       )}
