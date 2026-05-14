@@ -9,38 +9,48 @@ export default function ScanPage() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [camera, setCamera] = useState<MediaStream | null>(null)
-  const [status, setStatus] = useState('Starting camera...')
+  const [status, setStatus] = useState('')
+  const [permissionAsked, setPermissionAsked] = useState(false)
+  const [permissionDenied, setPermissionDenied] = useState(false)
   const [lastScannedId, setLastScannedId] = useState('')
   const animationRef = useRef<number>(0)
 
   useEffect(() => {
-    startCamera()
     return () => stopCamera()
   }, [])
-
-  async function startCamera() {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
-      })
-      
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream
-        await videoRef.current.play()
-        setCamera(stream)
-        setStatus('Point at QR code')
-        scanQRCode()
-      }
-    } catch (e) {
-      setStatus('Camera access denied')
-    }
-  }
 
   function stopCamera() {
     if (camera) {
       camera.getTracks().forEach(t => t.stop())
     }
     cancelAnimationFrame(animationRef.current)
+  }
+
+  async function requestCamera() {
+    setPermissionAsked(true)
+    setStatus('Requesting camera access...')
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { 
+          facingMode: 'environment',
+          width: { ideal: 1280 }, 
+          height: { ideal: 720 } 
+        }
+      })
+      
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream
+        await videoRef.current.play()
+        setCamera(stream)
+        setStatus('Point camera at QR code')
+        scanQRCode()
+      }
+    } catch (e: any) {
+      console.error('Camera error:', e)
+      setPermissionDenied(true)
+      setStatus('Camera access denied. Please allow camera in your browser settings.')
+    }
   }
 
   function scanQRCode() {
@@ -70,8 +80,6 @@ export default function ScanPage() {
       if (markerId && markerId !== lastScannedId) {
         setLastScannedId(markerId)
         launchAR(markerId)
-        
-        // Reset after 3 seconds to allow scanning again
         setTimeout(() => setLastScannedId(''), 3000)
       }
     }
@@ -98,76 +106,112 @@ export default function ScanPage() {
     const isAndroid = /Android/.test(navigator.userAgent)
 
     if (isAndroid) {
-      // Android: Launch Scene Viewer directly
       const intent = `intent://arvr.google.com/scene-viewer/1.0?file=${encodeURIComponent(data.glb_url)}&mode=ar_only#Intent;scheme=https;package=com.google.ar.core;action=android.intent.action.VIEW;S.browser_fallback_url=${encodeURIComponent(window.location.href)};end`
       window.location.href = intent
     } else {
-      // iOS: Redirect to the view page which has AR Quick Look
       window.location.href = `/view/${markerId}`
     }
   }
 
   return (
-    <div className="fixed inset-0 bg-black">
-      <video
-        ref={videoRef}
-        playsInline
-        muted
-        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-      />
-      
-      <canvas ref={canvasRef} style={{ display: 'none' }} />
-
-      <a 
-        href="/"
-        style={{
-          position: 'fixed',
-          top: 20,
-          left: 20,
-          zIndex: 999,
-          background: 'rgba(0,0,0,0.7)',
-          color: 'white',
-          padding: '10px 18px',
-          borderRadius: 10,
-          textDecoration: 'none',
-          fontSize: 14
-        }}
-      >
-        ← Back
-      </a>
-
-      <div
-        style={{
-          position: 'fixed',
-          top: 20,
-          left: '50%',
-          transform: 'translateX(-50%)',
-          background: 'rgba(0,0,0,0.7)',
-          color: 'white',
-          padding: '10px 20px',
-          borderRadius: 20,
-          fontSize: 14
-        }}
-      >
-        {status}
+    <div className="fixed inset-0 bg-black text-white flex flex-col">
+      {/* Header */}
+      <div className="p-4 flex items-center justify-between" style={{ background: 'rgba(0,0,0,0.7)' }}>
+        <a href="/" style={{ color: 'white', textDecoration: 'none' }}>← Back</a>
+        <span>📷 QR Scanner</span>
+        <span style={{ width: 50 }}></span>
       </div>
 
-      <div
-        style={{
-          position: 'fixed',
-          bottom: 40,
-          left: '50%',
-          transform: 'translateX(-50%)',
-          background: 'rgba(0,0,0,0.7)',
-          color: 'white',
-          padding: '15px 30px',
-          borderRadius: 30,
-          textAlign: 'center'
-        }}
-      >
-        <div style={{ fontSize: 24, marginBottom: 5 }}>📷</div>
-        <div>Point at QR code → AR launches!</div>
-      </div>
+      {/* Camera or Permission Request */}
+      {!permissionAsked ? (
+        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
+          <div style={{ fontSize: 80, marginBottom: 30 }}>📷</div>
+          <h2 className="text-2xl font-bold mb-4">Scan QR Codes for AR</h2>
+          <p className="text-gray-400 mb-8">
+            Point your camera at a QR code to instantly view 3D models in AR
+          </p>
+          <button
+            onClick={requestCamera}
+            style={{
+              background: '#4da6ff',
+              color: 'white',
+              padding: '18px 50px',
+              borderRadius: 30,
+              fontSize: 18,
+              fontWeight: 'bold',
+              border: 'none',
+              cursor: 'pointer'
+            }}
+          >
+            📷 Enable Camera
+          </button>
+        </div>
+      ) : permissionDenied ? (
+        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
+          <div style={{ fontSize: 60, marginBottom: 20 }}>🚫</div>
+          <h2 className="text-xl font-bold mb-4">Camera Access Denied</h2>
+          <p className="text-gray-400 mb-6">
+            Please enable camera access in your browser settings and reload this page.
+          </p>
+          <button
+            onClick={() => window.location.reload()}
+            style={{
+              background: '#4da6ff',
+              color: 'white',
+              padding: '14px 30px',
+              borderRadius: 20,
+              fontSize: 16,
+              fontWeight: 'bold',
+              border: 'none'
+            }}
+          >
+            Reload Page
+          </button>
+        </div>
+      ) : (
+        <>
+          <video
+            ref={videoRef}
+            playsInline
+            muted
+            autoPlay
+            style={{ flex: 1, objectFit: 'cover' }}
+          />
+          <canvas ref={canvasRef} style={{ display: 'none' }} />
+          
+          {/* Status overlay */}
+          <div
+            style={{
+              position: 'absolute',
+              top: 80,
+              left: '50%',
+              transform: 'translateX(-50%)',
+              background: 'rgba(0,0,0,0.7)',
+              padding: '10px 24px',
+              borderRadius: 20,
+              fontSize: 14
+            }}
+          >
+            {status}
+          </div>
+
+          {/* Bottom tip */}
+          <div
+            style={{
+              position: 'absolute',
+              bottom: 30,
+              left: '50%',
+              transform: 'translateX(-50%)',
+              background: 'rgba(0,0,0,0.7)',
+              padding: '12px 24px',
+              borderRadius: 20,
+              textAlign: 'center'
+            }}
+          >
+            Point at QR → AR launches
+          </div>
+        </>
+      )}
     </div>
   )
 }
