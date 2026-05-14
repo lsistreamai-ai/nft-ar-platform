@@ -9,17 +9,13 @@ export default function ScanPage() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [camera, setCamera] = useState<MediaStream | null>(null)
-  const [currentMarker, setCurrentMarker] = useState<ImageMarker | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
   const [status, setStatus] = useState('Starting camera...')
+  const [lastScannedId, setLastScannedId] = useState('')
   const animationRef = useRef<number>(0)
 
   useEffect(() => {
     startCamera()
-    return () => {
-      stopCamera()
-    }
+    return () => stopCamera()
   }, [])
 
   async function startCamera() {
@@ -32,11 +28,11 @@ export default function ScanPage() {
         videoRef.current.srcObject = stream
         await videoRef.current.play()
         setCamera(stream)
-        setStatus('Point camera at QR code')
+        setStatus('Point at QR code')
         scanQRCode()
       }
     } catch (e) {
-      setError('Camera access denied')
+      setStatus('Camera access denied')
     }
   }
 
@@ -71,35 +67,44 @@ export default function ScanPage() {
 
     if (code && code.data.includes('/view/')) {
       const markerId = code.data.split('/view/')[1]?.split(/[?&]/)[0]
-      if (markerId) {
-        loadMarker(markerId)
+      if (markerId && markerId !== lastScannedId) {
+        setLastScannedId(markerId)
+        launchAR(markerId)
+        
+        // Reset after 3 seconds to allow scanning again
+        setTimeout(() => setLastScannedId(''), 3000)
       }
     }
 
     animationRef.current = requestAnimationFrame(scanQRCode)
   }
 
-  async function loadMarker(id: string) {
-    if (loading || currentMarker?.id === id) return
-    
-    setLoading(true)
+  async function launchAR(markerId: string) {
     setStatus('Loading model...')
     
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from('image_markers')
       .select('*')
-      .eq('id', id)
+      .eq('id', markerId)
       .single()
     
-    if (data) {
-      setCurrentMarker(data)
-      setStatus(`Found: ${data.name}`)
-    } else {
-      setError('Marker not found')
+    if (!data) {
+      setStatus('Model not found')
+      return
     }
-    setLoading(false)
-    
-    setTimeout(() => setStatus('Point camera at QR code'), 2000)
+
+    setStatus(`Found: ${data.name}`)
+
+    const isAndroid = /Android/.test(navigator.userAgent)
+
+    if (isAndroid) {
+      // Android: Launch Scene Viewer directly
+      const intent = `intent://arvr.google.com/scene-viewer/1.0?file=${encodeURIComponent(data.glb_url)}&mode=ar_only#Intent;scheme=https;package=com.google.ar.core;action=android.intent.action.VIEW;S.browser_fallback_url=${encodeURIComponent(window.location.href)};end`
+      window.location.href = intent
+    } else {
+      // iOS: Redirect to the view page which has AR Quick Look
+      window.location.href = `/view/${markerId}`
+    }
   }
 
   return (
@@ -117,15 +122,15 @@ export default function ScanPage() {
         href="/"
         style={{
           position: 'fixed',
-          top: '20px',
-          left: '20px',
+          top: 20,
+          left: 20,
           zIndex: 999,
           background: 'rgba(0,0,0,0.7)',
           color: 'white',
-          padding: '12px 20px',
-          borderRadius: '10px',
+          padding: '10px 18px',
+          borderRadius: 10,
           textDecoration: 'none',
-          fontWeight: 'bold'
+          fontSize: 14
         }}
       >
         ← Back
@@ -134,88 +139,35 @@ export default function ScanPage() {
       <div
         style={{
           position: 'fixed',
-          top: '20px',
+          top: 20,
           left: '50%',
           transform: 'translateX(-50%)',
           background: 'rgba(0,0,0,0.7)',
           color: 'white',
           padding: '10px 20px',
-          borderRadius: '20px',
-          fontSize: '14px'
+          borderRadius: 20,
+          fontSize: 14
         }}
       >
-        {error || status}
+        {status}
       </div>
 
-      {currentMarker && (
-        <div
-          style={{
-            position: 'fixed',
-            bottom: '0',
-            left: '0',
-            right: '0',
-            height: '50%',
-            background: 'rgba(0,0,0,0.8)',
-            borderRadius: '20px 20px 0 0',
-            padding: '20px',
-            zIndex: 100
-          }}
-        >
-          <h2 style={{ color: 'white', textAlign: 'center', marginBottom: '10px' }}>
-            {currentMarker.name}
-          </h2>
-          <model-viewer
-            src={currentMarker.glb_url}
-            alt={currentMarker.name}
-            ar
-            ar-modes="webxr scene-viewer quick-look"
-            ar-scale="fixed"
-            camera-controls
-            auto-rotate
-            style={{ width: '100%', height: '250px', backgroundColor: 'transparent' }}
-          >
-            <button
-              slot="ar-button"
-              style={{
-                position: 'absolute',
-                bottom: '20px',
-                left: '50%',
-                transform: 'translateX(-50%)',
-                background: '#4da6ff',
-                color: 'white',
-                padding: '14px 30px',
-                borderRadius: '25px',
-                fontWeight: 'bold',
-                border: 'none',
-                fontSize: '16px'
-              }}
-            >
-              📱 View in AR
-            </button>
-          </model-viewer>
-        </div>
-      )}
-
-      {!currentMarker && (
-        <div
-          style={{
-            position: 'fixed',
-            bottom: '20px',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            background: 'rgba(0,0,0,0.7)',
-            color: 'white',
-            padding: '15px 30px',
-            borderRadius: '30px',
-            textAlign: 'center'
-          }}
-        >
-          <div style={{ fontSize: '24px', marginBottom: '5px' }}>📷</div>
-          <div>Point at QR code</div>
-        </div>
-      )}
-
-      <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.5.0/model-viewer.min.js" />
+      <div
+        style={{
+          position: 'fixed',
+          bottom: 40,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          background: 'rgba(0,0,0,0.7)',
+          color: 'white',
+          padding: '15px 30px',
+          borderRadius: 30,
+          textAlign: 'center'
+        }}
+      >
+        <div style={{ fontSize: 24, marginBottom: 5 }}>📷</div>
+        <div>Point at QR code → AR launches!</div>
+      </div>
     </div>
   )
 }
