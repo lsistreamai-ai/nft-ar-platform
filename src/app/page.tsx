@@ -221,17 +221,24 @@ export default function Dashboard() {
                     <h3 className="font-bold truncate">{m.name}</h3>
                     
                     <div className="flex gap-2 mt-3">
+                      <a
+                        href={`/view/${m.id}`}
+                        target="_blank"
+                        className="btn btn-primary flex-1 text-sm py-2 text-center"
+                      >
+                        👁️ View AR
+                      </a>
                       <button
                         onClick={() => downloadQR(m)}
-                        className="btn btn-primary flex-1 text-sm py-2"
+                        className="btn btn-secondary text-sm py-2"
                       >
-                        📥 Download QR
+                        📥 QR
                       </button>
                       <button
                         onClick={() => selectMarker(m)}
                         className="btn btn-secondary text-sm py-2"
                       >
-                        ✏️ Edit
+                        ✏️
                       </button>
                     </div>
                   </div>
@@ -246,10 +253,9 @@ export default function Dashboard() {
           <h2 className="font-bold mb-3">📖 How to Use</h2>
           <ol className="text-sm text-gray-300 space-y-2">
             <li>1. Create marker with name + GLB URL</li>
-            <li>2. Download the QR code</li>
-            <li>3. Print or display QR</li>
-            <li>4. Scan with phone camera</li>
-            <li>5. Point at floor → model appears!</li>
+            <li>2. Download the QR code OR tap "View AR"</li>
+            <li>3. Scan QR with phone camera</li>
+            <li>4. Camera opens → point at floor → model appears!</li>
           </ol>
         </div>
       </main>
