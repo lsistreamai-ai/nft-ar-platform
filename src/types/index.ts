@@ -4,6 +4,7 @@ export interface ImageMarker {
   image_url?: string
   glb_url: string
   book_id?: string
+  narration_text?: string
   scale: number
   position_x: number
   position_y: number

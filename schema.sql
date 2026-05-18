@@ -4,6 +4,8 @@ CREATE TABLE IF NOT EXISTS image_markers (
   name TEXT NOT NULL,
   image_url TEXT NOT NULL,
   glb_url TEXT NOT NULL,
+  book_id TEXT,
+  narration_text TEXT,
   scale DECIMAL DEFAULT 0.5,
   position_x DECIMAL DEFAULT 0,
   position_y DECIMAL DEFAULT 0,

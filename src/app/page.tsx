@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import type { ImageMarker } from '@/types'
 
@@ -25,6 +25,7 @@ export default function Dashboard() {
   const [glbUrl, setGlbUrl] = useState('')
   const [bookId, setBookId] = useState('')
   const [scale, setScale] = useState('0.5')
+  const [narrationText, setNarrationText] = useState('')
 
   useEffect(() => { loadData() }, [])
   
@@ -39,7 +40,6 @@ export default function Dashboard() {
     const { data } = await supabase.from('image_markers').select('*').order('created_at', { ascending: false })
     if (data) {
       setMarkers(data)
-      // Extract unique books from markers
       const bookMap = new Map<string, Book>()
       data.forEach(m => {
         const bid = m.book_id || 'uncategorized'
@@ -59,6 +59,7 @@ export default function Dashboard() {
     setGlbUrl(m.glb_url)
     setBookId(m.book_id || '')
     setScale(String(m.scale))
+    setNarrationText(m.narration_text || '')
   }
 
   function clearForm() {
@@ -67,6 +68,7 @@ export default function Dashboard() {
     setGlbUrl('')
     setBookId(selectedBook === 'all' ? '' : selectedBook)
     setScale('0.5')
+    setNarrationText('')
   }
 
   async function saveMarker(e: React.FormEvent) {
@@ -79,6 +81,7 @@ export default function Dashboard() {
       image_url: selected?.image_url || '',
       glb_url: glbUrl,
       book_id: bookId || null,
+      narration_text: narrationText || null,
       scale: parseFloat(scale) || 0.5,
       position_x: 0,
       position_y: 0,
@@ -127,7 +130,7 @@ export default function Dashboard() {
     setBookId(newBookName)
     setShowNewBook(false)
     setNewBookName('')
-    setMessage({ type: 'success', text: `Book "${newBookName}" created! Add markers to it.` })
+    setMessage({ type: 'success', text: `Book "${newBookName}" created!` })
   }
 
   const filteredMarkers = selectedBook === 'all' 
@@ -143,14 +146,14 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen bg-gray-950 text-white">
       <header className="sticky top-0 z-30 bg-gray-900/95 backdrop-blur border-b border-gray-800 px-4 py-4">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <div>
             <h1 className="text-xl font-bold">📷 AR Book Platform</h1>
-            <p className="text-sm text-gray-400">{markers.length} markers in {books.length} books</p>
+            <p className="text-sm text-gray-400">{markers.length} markers | {books.length} books</p>
           </div>
-          <a href="/scan" className="btn btn-secondary text-sm">
+          <a href="/scan" className="bg-gray-800 hover:bg-gray-700 px-4 py-2 rounded-lg text-sm transition">
             📱 Scanner
           </a>
         </div>
@@ -164,10 +167,10 @@ export default function Dashboard() {
 
       <main className="max-w-6xl mx-auto p-4 space-y-6">
         {/* Books Section */}
-        <div className="card p-6">
+        <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-bold">📚 Books</h2>
-            <button onClick={() => setShowNewBook(true)} className="btn btn-primary text-sm">
+            <button onClick={() => setShowNewBook(true)} className="bg-blue-600 hover:bg-blue-500 px-4 py-2 rounded-lg text-sm transition">
               + New Book
             </button>
           </div>
@@ -178,18 +181,18 @@ export default function Dashboard() {
                 type="text"
                 value={newBookName}
                 onChange={e => setNewBookName(e.target.value)}
-                placeholder="Book name (e.g., Hidden Kingdoms)"
-                className="flex-1"
+                placeholder="Book name"
+                className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-blue-500"
               />
-              <button onClick={createBook} className="btn btn-primary">Create</button>
-              <button onClick={() => setShowNewBook(false)} className="btn btn-secondary">Cancel</button>
+              <button onClick={createBook} className="bg-blue-600 hover:bg-blue-500 px-4 py-2 rounded-lg transition">Create</button>
+              <button onClick={() => setShowNewBook(false)} className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg transition">Cancel</button>
             </div>
           )}
 
           <div className="flex flex-wrap gap-2">
             <button
               onClick={() => setSelectedBook('all')}
-              className={`px-4 py-2 rounded-lg ${selectedBook === 'all' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300'}`}
+              className={`px-4 py-2 rounded-lg transition ${selectedBook === 'all' ? 'bg-blue-600' : 'bg-gray-800 hover:bg-gray-700'}`}
             >
               All ({markers.length})
             </button>
@@ -197,7 +200,7 @@ export default function Dashboard() {
               <button
                 key={book.id}
                 onClick={() => setSelectedBook(book.id)}
-                className={`px-4 py-2 rounded-lg ${selectedBook === book.id ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300'}`}
+                className={`px-4 py-2 rounded-lg transition ${selectedBook === book.id ? 'bg-blue-600' : 'bg-gray-800 hover:bg-gray-700'}`}
               >
                 {book.name} ({book.markers.length})
               </button>
@@ -206,7 +209,7 @@ export default function Dashboard() {
         </div>
 
         {/* Create/Edit Marker */}
-        <div className="card p-6">
+        <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800">
           <h2 className="text-lg font-bold mb-4">{selected?.id ? 'Edit Marker' : 'Create Marker'}</h2>
           
           <form onSubmit={saveMarker} className="space-y-4">
@@ -218,14 +221,19 @@ export default function Dashboard() {
                 onChange={e => setName(e.target.value)}
                 placeholder="e.g., Dragon"
                 required
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 focus:outline-none focus:border-blue-500"
               />
             </div>
 
             <div>
               <label className="block text-sm text-gray-400 mb-2">Book</label>
-              <select value={bookId} onChange={e => setBookId(e.target.value)}>
+              <select 
+                value={bookId} 
+                onChange={e => setBookId(e.target.value)}
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 focus:outline-none focus:border-blue-500"
+              >
                 <option value="">No book</option>
-                {books.map(b => (
+                {books.filter(b => b.id !== 'uncategorized').map(b => (
                   <option key={b.id} value={b.id}>{b.name}</option>
                 ))}
               </select>
@@ -239,22 +247,51 @@ export default function Dashboard() {
                 onChange={e => setGlbUrl(e.target.value)}
                 placeholder="https://...model.glb"
                 required
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 focus:outline-none focus:border-blue-500"
               />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm text-gray-400 mb-2">Scale</label>
-                <input type="number" step="0.1" value={scale} onChange={e => setScale(e.target.value)} />
+                <input 
+                  type="number" 
+                  step="0.1" 
+                  value={scale} 
+                  onChange={e => setScale(e.target.value)}
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 focus:outline-none focus:border-blue-500"
+                />
               </div>
             </div>
 
+            <div>
+              <label className="block text-sm text-gray-400 mb-2">
+                🎙️ Narration Text 
+                <span className="text-gray-500 text-xs ml-2">(Text-to-speech when viewing AR)</span>
+              </label>
+              <textarea
+                value={narrationText}
+                onChange={e => setNarrationText(e.target.value)}
+                placeholder="This dragon protects the ancient temple..."
+                rows={3}
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 focus:outline-none focus:border-blue-500 resize-none"
+              />
+            </div>
+
             <div className="flex gap-2">
-              <button type="submit" disabled={saving || !name || !glbUrl} className="btn btn-primary flex-1">
+              <button 
+                type="submit" 
+                disabled={saving || !name || !glbUrl} 
+                className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:cursor-not-allowed px-6 py-3 rounded-lg font-medium transition"
+              >
                 {saving ? 'Saving...' : 'Save Marker'}
               </button>
               {selected?.id && (
-                <button type="button" onClick={() => deleteMarker(selected.id)} className="btn btn-danger">
+                <button 
+                  type="button" 
+                  onClick={() => deleteMarker(selected.id)} 
+                  className="bg-red-600 hover:bg-red-500 px-6 py-3 rounded-lg transition"
+                >
                   Delete
                 </button>
               )}
@@ -270,23 +307,34 @@ export default function Dashboard() {
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {filteredMarkers.map(m => (
-                <div key={m.id} className="card overflow-hidden">
-                  <div className="bg-white p-4 flex items-center justify-center" style={{ minHeight: '200px' }}>
-                    <img src={getQRCodeUrl(m.id)} alt="QR" className="max-h-48" />
+                <div key={m.id} className="bg-gray-900 rounded-2xl overflow-hidden border border-gray-800">
+                  <div className="bg-white p-4 flex items-center justify-center" style={{ minHeight: '180px' }}>
+                    <img src={getQRCodeUrl(m.id)} alt="QR" className="max-h-40" />
                   </div>
                   
                   <div className="p-4">
                     <h3 className="font-bold truncate">{m.name}</h3>
                     {m.book_id && <p className="text-xs text-gray-400">{m.book_id}</p>}
+                    {m.narration_text && <p className="text-xs text-green-400 mt-1">🎙️ Has narration</p>}
                     
                     <div className="flex gap-2 mt-3">
-                      <a href={`/view/${m.id}`} target="_blank" className="btn btn-primary flex-1 text-sm py-2 text-center">
+                      <a 
+                        href={`/view/${m.id}`} 
+                        target="_blank" 
+                        className="flex-1 bg-blue-600 hover:bg-blue-500 text-white text-sm py-2 rounded-lg text-center transition"
+                      >
                         👁️ View AR
                       </a>
-                      <button onClick={() => downloadQR(m)} className="btn btn-secondary text-sm py-2">
-                        📥 QR
+                      <button 
+                        onClick={() => downloadQR(m)} 
+                        className="bg-gray-700 hover:bg-gray-600 text-sm py-2 px-3 rounded-lg transition"
+                      >
+                        📥
                       </button>
-                      <button onClick={() => selectMarker(m)} className="btn btn-secondary text-sm py-2">
+                      <button 
+                        onClick={() => selectMarker(m)} 
+                        className="bg-gray-700 hover:bg-gray-600 text-sm py-2 px-3 rounded-lg transition"
+                      >
                         ✏️
                       </button>
                     </div>

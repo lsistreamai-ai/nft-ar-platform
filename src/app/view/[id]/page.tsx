@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import type { ImageMarker } from '@/types'
 
@@ -8,14 +8,20 @@ export default function ARViewPage({ params }: { params: { id: string } }) {
   const [marker, setMarker] = useState<ImageMarker | null>(null)
   const [loading, setLoading] = useState(true)
   const [isAndroid, setIsAndroid] = useState(false)
+  const [isSpeaking, setIsSpeaking] = useState(false)
+  const speechRef = useRef<SpeechSynthesisUtterance | null>(null)
 
   useEffect(() => {
     setIsAndroid(/Android/.test(navigator.userAgent))
     loadMarker()
+    return () => {
+      if (window.speechSynthesis) {
+        window.speechSynthesis.cancel()
+      }
+    }
   }, [params.id])
 
   useEffect(() => {
-    // Auto-launch Scene Viewer for Android
     if (marker && isAndroid) {
       launchAndroidAR()
     }
@@ -37,6 +43,27 @@ export default function ARViewPage({ params }: { params: { id: string } }) {
     window.location.href = intent
   }
 
+  function toggleNarration() {
+    if (!marker?.narration_text) return
+
+    if (isSpeaking) {
+      window.speechSynthesis.cancel()
+      setIsSpeaking(false)
+      return
+    }
+
+    const utterance = new SpeechSynthesisUtterance(marker.narration_text)
+    utterance.rate = 0.9
+    utterance.pitch = 1
+    
+    utterance.onend = () => setIsSpeaking(false)
+    utterance.onerror = () => setIsSpeaking(false)
+    
+    speechRef.current = utterance
+    window.speechSynthesis.speak(utterance)
+    setIsSpeaking(true)
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-900">
@@ -53,7 +80,7 @@ export default function ARViewPage({ params }: { params: { id: string } }) {
       <div className="min-h-screen flex items-center justify-center bg-gray-900 p-4">
         <div className="text-center text-white">
           <h1 className="text-xl font-bold mb-2">Not Found</h1>
-          <a href="/" className="btn btn-primary mt-4 inline-block">Back</a>
+          <a href="/" className="bg-blue-600 hover:bg-blue-500 px-6 py-3 rounded-lg mt-4 inline-block transition">Back</a>
         </div>
       </div>
     )
@@ -72,6 +99,27 @@ export default function ARViewPage({ params }: { params: { id: string } }) {
       <div className="min-h-screen flex flex-col items-center justify-center p-4">
         <div className="text-center max-w-md">
           <h1 className="text-2xl font-bold mb-2">{marker.name}</h1>
+          
+          {/* Narration Button */}
+          {marker.narration_text && (
+            <button
+              onClick={toggleNarration}
+              style={{
+                width: '100%',
+                padding: '16px',
+                background: isSpeaking ? '#ef4444' : '#10b981',
+                color: 'white',
+                borderRadius: 15,
+                fontSize: 16,
+                fontWeight: 'bold',
+                border: 'none',
+                marginBottom: 20,
+                transition: 'all 0.3s'
+              }}
+            >
+              {isSpeaking ? '🔇 Stop Narration' : '🎙️ Play Narration'}
+            </button>
+          )}
           
           {isAndroid ? (
             <>
