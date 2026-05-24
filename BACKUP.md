@@ -3,6 +3,8 @@
 **Last Updated:** May 24, 2026
 **URL:** https://nft-ar-platform.vercel.app
 
+**Status:** ✅ WORKING (May 24, 2026 - 8:42 PM HK)
+
 ---
 
 ## Live URLs
@@ -72,6 +74,8 @@ CREATE TABLE image_markers (
 
 ### `/scan` - AR Scanner (Blending Mode)
 
+**Status:** ✅ WORKING
+
 **Behavior:**
 1. Shows "Enable Camera" button
 2. Asks for camera permission
@@ -92,6 +96,27 @@ CREATE TABLE image_markers (
 - `jsQR` for QR code scanning
 - `model-viewer` for 3D rendering
 - Camera uses `getUserMedia` with `facingMode: 'environment'`
+
+---
+
+### `/` - Main Dashboard
+
+**Behavior:**
+1. Create new markers with Name, GLB URL, Book, Scale, Narration
+2. All data saved to `image_markers` table in Supabase
+3. QR codes auto-generated for each marker
+4. Download QR codes as PNG
+5. Organize markers by Book
+6. Edit/Delete existing markers
+
+**Creating New QR Code:**
+1. Go to https://nft-ar-platform.vercel.app
+2. Fill in Name (required)
+3. Add GLB URL (required) - upload to Supabase storage or use external URL
+4. Optional: Book, Scale, Narration text
+5. Click "Save Marker"
+6. QR code appears on the card
+7. Click 📥 to download QR
 
 ---
 
